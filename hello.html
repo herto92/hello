@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <title>Claude Chat</title>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -233,8 +234,8 @@
 
         appendMessage("user", text);
 
-        // Add user turn to history.
-        history.push({ role: "user", content: text });
+        // Add user turn to history — content is already trimmed and non-empty.
+        history.push({ role: "user", content: text.trim() });
 
         const typingEl = document.createElement("div");
         typingEl.className = "typing";
@@ -280,10 +281,10 @@
           typingEl.remove();
 
           if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            const detail = err?.error?.message || `HTTP ${res.status}`;
-            appendError("API Error", detail);
-            // Pop the user message we just pushed so the history stays consistent.
+            const errBody = await res.json().catch(() => ({}));
+            const detail = errBody?.error?.message || `HTTP ${res.status}`;
+            console.error("[Claude Chat] API error", res.status, JSON.stringify(errBody));
+            appendError("API Error", `${detail} (status ${res.status})`);
             history.pop();
             return;
           }
@@ -309,11 +310,13 @@
             return;
           }
 
-          const assistantText = textBlocks.join("\n\n");
+          const assistantText = textBlocks.join("\n\n").trim();
+          if (!assistantText) {
+            history.pop();
+            appendError("Empty response", "Claude returned only whitespace. Message not saved.");
+            return;
+          }
           appendMessage("assistant", assistantText);
-
-          // Only push the assistant turn once we have confirmed non-empty text,
-          // avoiding the "text content blocks must be non-empty" 400 error.
           history.push({ role: "assistant", content: assistantText });
         } catch (e) {
           typingEl.remove();
