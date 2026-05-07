@@ -242,6 +242,25 @@
         document.getElementById("messages").appendChild(typingEl);
         typingEl.scrollIntoView({ behavior: "smooth" });
 
+        // Scrub any empty-content turns before sending — prevents 400 errors.
+        const safeHistory = history.filter((m) => {
+          if (typeof m.content === "string") return m.content.trim() !== "";
+          if (Array.isArray(m.content)) return m.content.some((b) => b.type === "text" && b.text && b.text.trim());
+          return false;
+        });
+
+        // Enforce strict alternation: keep only a valid user/assistant sequence.
+        const cleanHistory = [];
+        for (const msg of safeHistory) {
+          const last = cleanHistory[cleanHistory.length - 1];
+          if (last && last.role === msg.role) continue; // skip duplicate-role turns
+          cleanHistory.push(msg);
+        }
+        // API requires the last message to be from the user.
+        while (cleanHistory.length && cleanHistory[cleanHistory.length - 1].role !== "user") {
+          cleanHistory.pop();
+        }
+
         try {
           const res = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
@@ -254,7 +273,7 @@
             body: JSON.stringify({
               model: "claude-opus-4-7",
               max_tokens: 4096,
-              messages: history,
+              messages: cleanHistory,
             }),
           });
 
