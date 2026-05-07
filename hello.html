@@ -2,14 +2,332 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>hello</title>
-  </head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <title>Claude Chat</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
 
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0f0f0f;
+        color: #e0e0e0;
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      header {
+        padding: 12px 20px;
+        border-bottom: 1px solid #2a2a2a;
+        font-weight: 600;
+        font-size: 15px;
+        color: #fff;
+        background: #141414;
+      }
+
+      #messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .message {
+        max-width: 720px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .message.user {
+        align-self: flex-end;
+        background: #1e3a5f;
+        border-radius: 18px 18px 4px 18px;
+        padding: 10px 16px;
+        color: #d0e8ff;
+      }
+
+      .message.assistant {
+        align-self: flex-start;
+        background: #1e1e1e;
+        border-radius: 4px 18px 18px 18px;
+        padding: 10px 16px;
+        border: 1px solid #2a2a2a;
+      }
+
+      .error-banner {
+        align-self: flex-start;
+        background: #3b0e0e;
+        border: 1px solid #7c2020;
+        border-radius: 8px;
+        padding: 10px 14px;
+        color: #f87171;
+        font-size: 13px;
+        max-width: 600px;
+      }
+
+      .error-banner strong { display: block; margin-bottom: 4px; }
+
+      #input-area {
+        padding: 16px 20px;
+        border-top: 1px solid #2a2a2a;
+        background: #141414;
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+      }
+
+      #api-key-row {
+        padding: 12px 20px;
+        background: #141414;
+        border-bottom: 1px solid #2a2a2a;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        font-size: 13px;
+        color: #888;
+      }
+
+      #api-key-row input {
+        flex: 1;
+        background: #1e1e1e;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 8px 12px;
+        color: #e0e0e0;
+        font-size: 13px;
+      }
+
+      #user-input {
+        flex: 1;
+        resize: none;
+        background: #1e1e1e;
+        border: 1px solid #333;
+        border-radius: 12px;
+        padding: 10px 14px;
+        color: #e0e0e0;
+        font-size: 14px;
+        font-family: inherit;
+        line-height: 1.5;
+        max-height: 160px;
+        overflow-y: auto;
+      }
+
+      #user-input:focus { outline: none; border-color: #4a6fa5; }
+      #user-input::placeholder { color: #555; }
+
+      #send-btn {
+        background: #2563eb;
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        padding: 10px 18px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+        flex-shrink: 0;
+      }
+
+      #send-btn:hover:not(:disabled) { background: #1d4ed8; }
+      #send-btn:disabled { background: #334155; cursor: not-allowed; color: #64748b; }
+
+      .typing { color: #555; font-style: italic; font-size: 13px; }
+
+      #clear-btn {
+        background: transparent;
+        color: #555;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: color 0.15s;
+      }
+
+      #clear-btn:hover { color: #e0e0e0; border-color: #555; }
+    </style>
+  </head>
   <body>
-    <h1> WELCOME TO MY WEBSITE </h1>
-    This is my website that i just make it 
-    <h2>Hello</h2>
+    <header>Claude Chat</header>
+
+    <div id="api-key-row">
+      <span>API Key:</span>
+      <input id="api-key" type="password" placeholder="sk-ant-…" autocomplete="off" />
+      <button id="clear-btn" onclick="clearChat()">Clear chat</button>
+    </div>
+
+    <div id="messages"></div>
+
+    <div id="input-area">
+      <textarea
+        id="user-input"
+        rows="1"
+        placeholder="Message Claude…"
+        onkeydown="handleKey(event)"
+        oninput="autoResize(this)"
+      ></textarea>
+      <button id="send-btn" onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+      // Conversation history sent to the API — only non-empty turns stored here.
+      const history = [];
+
+      function getApiKey() {
+        return document.getElementById("api-key").value.trim();
+      }
+
+      function autoResize(el) {
+        el.style.height = "auto";
+        el.style.height = Math.min(el.scrollHeight, 160) + "px";
+      }
+
+      function handleKey(e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      }
+
+      function appendMessage(role, text) {
+        const el = document.createElement("div");
+        el.className = "message " + role;
+        el.textContent = text;
+        document.getElementById("messages").appendChild(el);
+        el.scrollIntoView({ behavior: "smooth" });
+        return el;
+      }
+
+      function appendError(title, detail) {
+        const el = document.createElement("div");
+        el.className = "error-banner";
+        el.innerHTML = `<strong>API Error</strong>${detail}`;
+        document.getElementById("messages").appendChild(el);
+        el.scrollIntoView({ behavior: "smooth" });
+      }
+
+      function clearChat() {
+        history.length = 0;
+        document.getElementById("messages").innerHTML = "";
+      }
+
+      async function sendMessage() {
+        const inputEl = document.getElementById("user-input");
+        const text = inputEl.value.trim();
+
+        // Fix: guard against empty user messages — they cause a 400 from the API.
+        if (!text) return;
+
+        const apiKey = getApiKey();
+        if (!apiKey) {
+          appendError("Missing API key", "Enter your Anthropic API key above.");
+          return;
+        }
+
+        inputEl.value = "";
+        inputEl.style.height = "auto";
+        document.getElementById("send-btn").disabled = true;
+
+        appendMessage("user", text);
+
+        // Add user turn to history — content is already trimmed and non-empty.
+        history.push({ role: "user", content: text.trim() });
+
+        const typingEl = document.createElement("div");
+        typingEl.className = "typing";
+        typingEl.textContent = "Claude is thinking…";
+        document.getElementById("messages").appendChild(typingEl);
+        typingEl.scrollIntoView({ behavior: "smooth" });
+
+        // Scrub any empty-content turns before sending — prevents 400 errors.
+        const safeHistory = history.filter((m) => {
+          if (typeof m.content === "string") return m.content.trim() !== "";
+          if (Array.isArray(m.content)) return m.content.some((b) => b.type === "text" && b.text && b.text.trim());
+          return false;
+        });
+
+        // Enforce strict alternation: keep only a valid user/assistant sequence.
+        const cleanHistory = [];
+        for (const msg of safeHistory) {
+          const last = cleanHistory[cleanHistory.length - 1];
+          if (last && last.role === msg.role) continue; // skip duplicate-role turns
+          cleanHistory.push(msg);
+        }
+        // API requires the last message to be from the user.
+        while (cleanHistory.length && cleanHistory[cleanHistory.length - 1].role !== "user") {
+          cleanHistory.pop();
+        }
+
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+              "anthropic-dangerous-direct-browser-access": "true",
+            },
+            body: JSON.stringify({
+              model: "claude-opus-4-7",
+              max_tokens: 4096,
+              messages: cleanHistory,
+            }),
+          });
+
+          typingEl.remove();
+
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            const detail = errBody?.error?.message || `HTTP ${res.status}`;
+            console.error("[Claude Chat] API error", res.status, JSON.stringify(errBody));
+            appendError("API Error", `${detail} (status ${res.status})`);
+            history.pop();
+            return;
+          }
+
+          const data = await res.json();
+
+          // Extract text from all text-type content blocks.
+          // Fix: filter to blocks with type "text" and non-empty .text before joining,
+          // so we never store an empty string as an assistant turn in history.
+          const textBlocks = (data.content || [])
+            .filter((b) => b.type === "text" && b.text)
+            .map((b) => b.text);
+
+          if (textBlocks.length === 0) {
+            // Claude replied with no text (e.g. only a thinking block).
+            // Remove the user turn we added — sending it without a paired
+            // assistant reply would corrupt the alternating turn structure.
+            history.pop();
+            appendError(
+              "Empty response",
+              "Claude returned no text content. The message was not added to history."
+            );
+            return;
+          }
+
+          const assistantText = textBlocks.join("\n\n").trim();
+          if (!assistantText) {
+            history.pop();
+            appendError("Empty response", "Claude returned only whitespace. Message not saved.");
+            return;
+          }
+          appendMessage("assistant", assistantText);
+          history.push({ role: "assistant", content: assistantText });
+        } catch (e) {
+          typingEl.remove();
+          appendError("Network error", e.message || String(e));
+          // Keep history consistent on network failure.
+          history.pop();
+        } finally {
+          document.getElementById("send-btn").disabled = false;
+          inputEl.focus();
+        }
+      }
+    </script>
   </body>
 </html>
